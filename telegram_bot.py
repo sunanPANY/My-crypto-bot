@@ -36,6 +36,25 @@ YIELDS = [
 ]
 
 
+def fetch_meme_coins():
+    try:
+        url = "https://api.coingecko.com/api/v3/coins/markets"
+        params = {
+            "vs_currency": "usd",
+            "category": "meme-token",
+            "order": "percent_change_24h_desc",
+            "per_page": 10,
+            "price_change_percentage": "24h"
+        }
+        r = requests.get(url, params=params, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            return sorted(data, key=lambda x: x.get("price_change_percentage_24h") or 0, reverse=True)[:8]
+    except Exception as e:
+        logger.error(f"ดึงมีม coin ไม่ได้: {e}")
+    return []
+
+
 def fetch_crypto_prices():
     try:
         url = "https://api.coingecko.com/api/v3/coins/markets"
@@ -105,9 +124,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🚀 *Crypto Intelligence Bot พร้อมใช้งาน!*\n\n"
         "คำสั่งที่ใช้ได้:\n"
-        "/report — รายงานล่าสุดทันที\n"
+        "/report — รายงานภาพรวมทั้งหมด\n"
         "/airdrops — รายการแอร์ดรอป\n"
-        "/yields — Yield Farming สูงสุด",
+        "/yields — Yield Farming สูงสุด\n"
+        "/meme — มีม Coin Trending 🔥",
         parse_mode="Markdown"
     )
 
@@ -136,6 +156,41 @@ async def cmd_yields(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
+async def cmd_meme(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⏳ กำลังดึงข้อมูลมีม coin...")
+    coins = fetch_meme_coins()
+    now = datetime.now().strftime("%d/%m/%Y %H:%M น.")
+    lines = [f"🎰 *มีม Coin Trending วันนี้*", f"📅 {now}\n"]
+
+    if coins:
+        for i, c in enumerate(coins, 1):
+            chg = c.get("price_change_percentage_24h") or 0
+            price = c.get("current_price", 0)
+            mcap = c.get("market_cap", 0)
+            emoji = "🔥" if chg > 20 else "📈" if chg > 0 else "📉"
+            sign = "+" if chg >= 0 else ""
+
+            # แสดงราคาตามขนาด
+            if price < 0.000001:
+                price_str = f"${price:.10f}"
+            elif price < 0.01:
+                price_str = f"${price:.6f}"
+            else:
+                price_str = f"${price:,.4f}"
+
+            mcap_str = f"${mcap/1e9:.2f}B" if mcap > 1e9 else f"${mcap/1e6:.1f}M"
+
+            lines.append(f"{emoji} *{i}. {c.get('symbol','').upper()}* — {price_str}")
+            lines.append(f"   การเปลี่ยนแปลง: `{sign}{chg:.1f}%` | MCap: {mcap_str}")
+            lines.append(f"   ชื่อ: {c.get('name','')}\n")
+    else:
+        lines.append("⚠️ ดึงข้อมูลไม่ได้ชั่วคราว")
+
+    lines.append("━━━━━━━━━━━━━━━━━━")
+    lines.append("⚠️ _มีม coin ความเสี่ยงสูงมาก ลงทุนเท่าที่รับได้_")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
 def main():
     logger.info("🚀 เริ่มต้น Crypto Intelligence Bot")
 
@@ -149,6 +204,7 @@ def main():
     app.add_handler(CommandHandler("report", cmd_report))
     app.add_handler(CommandHandler("airdrops", cmd_airdrops))
     app.add_handler(CommandHandler("yields", cmd_yields))
+    app.add_handler(CommandHandler("meme", cmd_meme))
 
     logger.info("✅ Bot พร้อมรับคำสั่ง")
     app.run_polling(drop_pending_updates=True)
